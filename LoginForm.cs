@@ -1,6 +1,6 @@
 using System;
+using System.Drawing;
 using System.Windows.Forms;
-
 
 namespace radar_settinf_tool_project
 {
@@ -9,13 +9,13 @@ namespace radar_settinf_tool_project
         private TextBox txtUsername;
         private TextBox txtPassword;
         private Button btnLogin;
+        private Label lblStatus;  // 상태 메시지 표시용 라벨
 
         public LoginForm()
         {
-            // InitializeComponent() 대신 직접 초기화
             this.Text = "Login";
             this.Width = 300;
-            this.Height = 180;
+            this.Height = 220;
             this.StartPosition = FormStartPosition.CenterScreen;
 
             Label lblUsername = new Label() { Text = "Username:", Left = 10, Top = 20, Width = 70 };
@@ -27,11 +27,22 @@ namespace radar_settinf_tool_project
             btnLogin = new Button() { Text = "Login", Left = 90, Top = 100, Width = 80 };
             btnLogin.Click += BtnLogin_Click;
 
+            lblStatus = new Label()
+            {
+                Text = "",
+                Left = 110,
+                Top = 140,
+                Width = 250,
+                ForeColor = Color.Green,
+                Visible = false
+            };
+
             this.Controls.Add(lblUsername);
             this.Controls.Add(txtUsername);
             this.Controls.Add(lblPassword);
             this.Controls.Add(txtPassword);
             this.Controls.Add(btnLogin);
+            this.Controls.Add(lblStatus);  // 상태 라벨 추가
         }
 
         private void BtnLogin_Click(object sender, EventArgs e)
@@ -41,16 +52,20 @@ namespace radar_settinf_tool_project
 
             if (username == "a2uict" && password == "a2uict6909")
             {
-                MessageBox.Show("로그인 성공!");
-                this.Hide();  
-                MainForm mainForm = new MainForm();
-                mainForm.ShowDialog();        // 메인 폼 열기 (모달)
-                this.Close();                 // 메인폼 닫히면 로그인 폼 종료
-               
+                lblStatus.Text = "로그인 성공!";
+                lblStatus.Visible = true;
 
-                // MainForm이 없다면 이 부분 삭제하거나 주석 처리하세요.
-                // var mainForm = new MainForm();
-                // mainForm.ShowDialog();
+                Timer timer = new Timer();
+                timer.Interval = 1000;
+                timer.Tick += (s, args) =>
+                {
+                    timer.Stop();
+                    this.Hide();
+                    MainForm mainForm = new MainForm();
+                    mainForm.ShowDialog();
+                    this.Close();
+                };
+                timer.Start();
             }
             else
             {
