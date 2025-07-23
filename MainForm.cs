@@ -5,10 +5,13 @@ using System.Text;
 using System.Drawing;
 using System.IO;
 using System.Collections.Generic;
+using System.Net.Sockets;
+using System.Net;
+using System.Threading.Tasks;
 
 namespace radar_settinf_tool_project
 {
-    // main 문 
+    // main 문
     public class MainForm : Form
     {
         private RadioButton intergration_btn;
@@ -18,8 +21,13 @@ namespace radar_settinf_tool_project
         private Button ConnentServerBtn;
         private RichTextBox resultBox;
         private TextBox uidBox;
+        private TextBox commandBox;
+        private TextBox valueBox;
         private ComboBox uidComboBox;
-       
+        private List<string> UidStringList = new List<string>(); // uid를 저장할 배열
+        private bool check_socket = false;
+        private Label checked_label;
+
         public MainForm()
         {
             // main form 기본 세팅
@@ -31,11 +39,11 @@ namespace radar_settinf_tool_project
             InitModeSelection(); // 라디오 버튼
             InitServerControls(); // 서버 ip, port
             InitSetValue();// uid, command, value
-            ResultPannel();
+            ResultPannel(); // log 창
 
             AppendLog("로그인 성공");     // 초록색
-            AppendLog("연결 실패");       // 빨간색
-            AppendLog("설정 완료");       // 기본 흰색
+            //AppendLog("연결 실패");       // 빨간색
+            //AppendLog("설정 완료");       // 기본 흰색
 
         }
 
@@ -126,16 +134,19 @@ namespace radar_settinf_tool_project
             currentY += 45;
 
             // 상태 라벨
-            Label checked_label = new Label()
+            checked_label = new Label()
             {
-                Text = "Socket is not connected.",
+                Text = check_socket ? "Socket is connected." : "Socket is not connected.",
                 Width = textBoxWidth,
                 Height = 35,
                 Location = new Point(baseX, currentY),
-                BackColor = Color.LightYellow,
+                BackColor = check_socket ? Color.IndianRed : Color.LightYellow,
                 TextAlign = ContentAlignment.MiddleCenter,
                 AutoSize = false
             };
+
+            // 서버연결 버튼 이벤트 추가
+            ConnentServerBtn.Click += ConnectSocketEvent;
 
             // 컨트롤 추가
             this.Controls.Add(server_Ip_Label);
@@ -179,7 +190,6 @@ namespace radar_settinf_tool_project
                 DropDownStyle = ComboBoxStyle.DropDownList
             };
 
-            //uidComboBox.Items.AddRange(new string[] { "211_1", "211_2", "211_3" }); // 예시 항목
 
             this.Controls.Add(uidLabel);
             this.Controls.Add(uidBox);
@@ -195,7 +205,7 @@ namespace radar_settinf_tool_project
                 AutoSize = true,
                 Font = new Font("맑은 고딕", 10, FontStyle.Bold)
             };
-            TextBox commandBox = new TextBox()
+            commandBox = new TextBox()
             {
                 Location = new Point(baseX, currentY),
                 Width = textBoxWidth
@@ -211,7 +221,7 @@ namespace radar_settinf_tool_project
                 AutoSize = true,
                 Font = new Font("맑은 고딕", 10, FontStyle.Bold)
             };
-            TextBox valueBox = new TextBox()
+            valueBox = new TextBox()
             {
                 Location = new Point(baseX, currentY),
                 Width = textBoxWidth
@@ -226,6 +236,8 @@ namespace radar_settinf_tool_project
                 Width = textBoxWidth,
                 Height = 30
             };
+
+            sendButton.Click += SendDataToRaderEvent;
 
             this.Controls.Add(commandLabel);
             this.Controls.Add(commandBox);
@@ -315,7 +327,10 @@ namespace radar_settinf_tool_project
                 foreach (var pair in dict)
                 {
                     uidComboBox.Items.Add($"{pair.Key} : {pair.Value}");
+
+                    UidStringList.Add(pair.Value.Split('/')[1]);
                 }
+                //Console.WriteLine("UID 리스트 : " + string.Join(", ", UidStringList));
 
                 AppendLog($"UID JSON 파일에서 {dict.Count}개의 항목을 불러왔습니다.");
             }
@@ -325,6 +340,67 @@ namespace radar_settinf_tool_project
             }
         }
 
+        // 소켓 초기화 함수.
+        private Socket InitSocket(string server_ip, int server_port)
+        {
+            // 소켓 생성 및 연결
+            try
+            {
+                Socket socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp); // IPv4, 스트림 소켓 (TCP), TCP 프로토콜
+                socket.Connect(server_ip, server_port);
+                return socket;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("연결 실패: " + ex.Message);
+                AppendLog($"연결 실패:  + {ex.Message}");
+                return null;
+            }
+        }
+
+        private Dictionary<string, object> SendControlMessage(Socket clientSocket, string uid, string command, string value)
+        {
+            var result = new Dictionary<string, object>();
+
+            try
+            {
+                if (clientSocket == null || !clientSocket.Connected)
+                {
+                    result["status"] = "error";
+                    result["error"] = "Socket is not initialized or not connected.";
+                    return result;
+                }
+
+                // Control 메시지 생성
+                var message = new Dictionary<string, string>
+                {
+                    { "type", "control" },
+                    { "uid", uid }, // uid_textbox.text
+                    { "command", command }, // command_textbox.text
+                    { "value", value } // value_textbox.text
+                };
+
+                // JSON 직렬화 후 전송
+                string jsonMessage = JsonConvert.SerializeObject(message);
+                byte[] dataToSend = Encoding.UTF8.GetBytes(jsonMessage);
+                clientSocket.Send(dataToSend);
+
+                // 응답 수신
+                byte[] buffer = new byte[8192];
+                int received = clientSocket.Receive(buffer);
+                string responseJson = Encoding.UTF8.GetString(buffer, 0, received);
+
+                // 응답 JSON 파싱
+                var responseDict = JsonConvert.DeserializeObject<Dictionary<string, object>>(responseJson);
+                return responseDict;
+            }
+            catch (Exception ex)
+            {
+                result["status"] = "error";
+                result["error"] = ex.Message;
+                return result;
+            }
+        }
 
 
         //------------- ↓↓ 이벤트 함수----------------
@@ -348,12 +424,86 @@ namespace radar_settinf_tool_project
                 {
                     LoadUidJson(); // json 파일에서 값 읽어오기
                 }
-                
+
             }
         }
 
+        // 소켓 연결 이벤트 함수
+        private void ConnectSocketEvent(object sender, EventArgs e)
+        {
+            try
+            {
+                Button btn = (Button)sender;
+                Console.WriteLine($"ip : {InputServerIp.Text}, port : {int.Parse(InputServerPort.Text)}");
+                Socket sock = InitSocket(InputServerIp.Text, int.Parse(InputServerPort.Text));
+                if (sock != null)
+                {
+                    AppendLog($"[소켓 연결 성공] 서버 IP:{InputServerIp.Text}, 포트:{InputServerPort.Text}");
+                    check_socket = true;
+                    checked_label.Text = "Socket is connected.";
+                    checked_label.BackColor = Color.Green;
+                }
+                else
+                {
+                    check_socket = false;
+                    checked_label.Text = "Socket is not connected.";
+                    checked_label.BackColor = Color.LightYellow;
+                }
+            }
+            catch (InvalidCastException)
+            {
+                AppendLog("[소켓 연결 실패] sender가 Button 타입이 아닙니다.");
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"[소켓 연결 실패] 예외 발생: {ex.Message}");
+            }
+        }
 
+        // 레이더에 세팅 값 보내는 이벤트
+        private async void SendDataToRaderEvent(object sender, EventArgs e)
+        {
+            try
+            {
+                Socket sock = InitSocket(InputServerIp.Text, int.Parse(InputServerPort.Text));
+                if (sock == null) return;
 
+                // 타임아웃 설정 (3초)
+                sock.ReceiveTimeout = 3000;
+
+                // 비동기 처리
+                var responseDict = await Task.Run(() =>
+                    SendControlMessage(sock,
+                        uidBox.Text.Replace(" ", ""),
+                        commandBox.Text.Replace(" ", ""),
+                        valueBox.Text.Replace(" ", ""))
+                );
+
+                string status = responseDict.ContainsKey("status") ? responseDict["status"]?.ToString() : null;
+                string type = responseDict.ContainsKey("type") ? responseDict["type"]?.ToString() : null;
+
+                if (status == "success" || type == "cli")
+                {
+                    MessageBox.Show("Command sent successfully!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                else
+                {
+                    MessageBox.Show("Failed to send command.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+
+                string responseStr = JsonConvert.SerializeObject(responseDict, Formatting.Indented);
+                AppendLog($"서버 응답: {responseStr}");
+            }
+            catch (SocketException ex) when (ex.SocketErrorCode == SocketError.TimedOut)
+            {
+                AppendLog("응답 시간 초과 (서버가 재시작 중일 수 있음).");
+                MessageBox.Show("서버 응답이 없습니다. 서버가 재시작 중일 수 있습니다.", "Timeout", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Error: " + ex.Message, "Exception", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
 
     }
 }
