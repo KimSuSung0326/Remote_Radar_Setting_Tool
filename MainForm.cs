@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 
 namespace radar_settinf_tool_project
 {
-    // main 문
+    // main 문 
     public class MainForm : Form
     {
         private RadioButton intergration_btn;
@@ -25,8 +25,13 @@ namespace radar_settinf_tool_project
         private TextBox valueBox;
         private ComboBox uidComboBox;
         private List<string> UidStringList = new List<string>(); // uid를 저장할 배열
+        public static List<(string Uid, int Port)> UidPortTupleList = new List<(string, int)>();//튜플에 uid, port 저장
         private bool check_socket = false;
         private Label checked_label;
+        private Label server_Ip_Label;
+        private Label server_Port_Label;
+
+       
 
         public MainForm()
         {
@@ -52,8 +57,16 @@ namespace radar_settinf_tool_project
         {
             Label modeLabel = new Label()
             {
-                Text = "세팅 방법",
+                Text = "세팅",
                 Location = new Point(20, 10),
+                AutoSize = true,
+                Font = new Font("맑은 고딕", 10, FontStyle.Bold)
+            };
+
+            Label modeLabel_2 = new Label()
+            {
+                Text = "세팅 값 확인",
+                Location = new Point(70, 10),
                 AutoSize = true,
                 Font = new Font("맑은 고딕", 10, FontStyle.Bold)
             };
@@ -76,6 +89,7 @@ namespace radar_settinf_tool_project
             intergration_btn.CheckedChanged += ModeChanged;
 
             this.Controls.Add(modeLabel);
+            this.Controls.Add(modeLabel_2);
             this.Controls.Add(individual_btn);
             this.Controls.Add(intergration_btn);
         }
@@ -89,7 +103,7 @@ namespace radar_settinf_tool_project
             int currentY = 95;
 
             // 서버 IP Label & TextBox
-            Label server_Ip_Label = new Label()
+            server_Ip_Label = new Label()
             {
                 Text = "서버 IP",
                 Location = new Point(baseX, currentY - 25),
@@ -106,7 +120,7 @@ namespace radar_settinf_tool_project
             currentY += verticalSpacing;
 
             // 서버 Port Label & TextBox
-            Label server_Port_Label = new Label()
+            server_Port_Label = new Label()
             {
                 Text = "서버 Port",
                 Location = new Point(baseX, currentY - 25),
@@ -190,7 +204,6 @@ namespace radar_settinf_tool_project
                 DropDownStyle = ComboBoxStyle.DropDownList
             };
 
-
             this.Controls.Add(uidLabel);
             this.Controls.Add(uidBox);
             this.Controls.Add(uidComboBox);
@@ -244,6 +257,7 @@ namespace radar_settinf_tool_project
             this.Controls.Add(valueLabel);
             this.Controls.Add(valueBox);
             this.Controls.Add(sendButton);
+
         }
 
 
@@ -280,7 +294,7 @@ namespace radar_settinf_tool_project
             {
                 color = Color.LimeGreen;
             }
-            else if (message.Contains("실패"))
+            else if (message.Contains("실패") || message.Contains("Error"))
             {
                 color = Color.Red;
             }
@@ -301,10 +315,7 @@ namespace radar_settinf_tool_project
             try
             {
                 string exePath = AppDomain.CurrentDomain.BaseDirectory;
-                // bin\Debug\netX.X\ → radar_settinf_tool_project\ 로 이동
                 string projectPath = Directory.GetParent(exePath).Parent.Parent.Parent.FullName;
-
-                // 프로젝트 루트 기준으로 json/uid.json 경로 설정
                 string jsonFilePath = Path.Combine(projectPath, "json", "uid_list.json");
 
                 if (!File.Exists(jsonFilePath))
@@ -314,7 +325,7 @@ namespace radar_settinf_tool_project
                 }
 
                 string jsonText = File.ReadAllText(jsonFilePath, Encoding.UTF8);
-                var dict = JsonConvert.DeserializeObject<Dictionary<string, string>>(jsonText);
+                var dict = JsonConvert.DeserializeObject<Dictionary<string, Dictionary<string, object>>>(jsonText);
 
                 if (dict == null)
                 {
@@ -323,14 +334,39 @@ namespace radar_settinf_tool_project
                 }
 
                 uidComboBox.Items.Clear();
+                UidStringList.Clear();
+                UidPortTupleList.Clear();
 
                 foreach (var pair in dict)
                 {
-                    uidComboBox.Items.Add($"{pair.Key} : {pair.Value}");
+                    var valueDict = pair.Value;
 
-                    UidStringList.Add(pair.Value.Split('/')[1]);
+                    if (valueDict.TryGetValue("uid", out object uidObj) && valueDict.TryGetValue("port", out object portObj))
+                    {
+                        string uidFull = uidObj.ToString(); // e.g. "21b7/05583E818120D"
+                        int port = Convert.ToInt32(portObj);
+
+                        uidComboBox.Items.Add($"{pair.Key} : {uidFull}");
+
+                        // uid에서 "21b7/" 제거하고 저장
+                        if (uidFull.StartsWith("21b7/"))
+                        {
+                            string uidStripped = uidFull.Substring(5);
+                            UidStringList.Add(uidStripped);
+                            UidPortTupleList.Add((uidStripped, port));
+                        }
+                        else
+                        {
+                            UidStringList.Add(uidFull); // fallback if prefix missing
+                            UidPortTupleList.Add((uidFull, port));
+                        }
+                    }
                 }
-                //Console.WriteLine("UID 리스트 : " + string.Join(", ", UidStringList));
+                // uid, port 값 출력
+                //foreach (var item in UidPortTupleList)
+                //{
+                    //Console.WriteLine($"UID: {item.Uid}, Port: {item.Port}");
+                //}    
 
                 AppendLog($"UID JSON 파일에서 {dict.Count}개의 항목을 불러왔습니다.");
             }
@@ -339,6 +375,92 @@ namespace radar_settinf_tool_project
                 AppendLog($"UID JSON 로딩 중 오류: {ex.Message}");
             }
         }
+
+        // 모든 uid를 세팅 하는 함수
+
+        private async Task SendAllUidCommandsAsync(string serverIp, string command, string value)
+        {
+            foreach (var (uid, port) in UidPortTupleList)
+            {
+                Socket sock = null;
+
+                if (sock != null && sock.Connected) // 연결되어있는 소켓 초기화
+                {
+                    try
+                    {
+                        sock.Shutdown(SocketShutdown.Both);
+                    }
+                    catch (Exception ex)
+                    {
+                        AppendLog($"기존 소켓 종료 중 오류: {ex.Message}");
+                    }
+                    finally
+                    {
+                        sock.Close();
+                        sock = null;
+                    }
+                }
+                AppendLog($"UID: {uid}, Port: {port} 서버에 연결 시도 중...");
+
+                try
+                {
+                    // 소켓 연결을 Task로 감싸고 10초 타임아웃 설정(10초 안에 연결 못하면 다음 소켓 연결로 넘어감)
+                    var connectTask = Task.Run(() => InitSocket(serverIp, port));
+                    var timeoutTask = Task.Delay(TimeSpan.FromSeconds(10));
+
+                    var completedTask = await Task.WhenAny(connectTask, timeoutTask);
+
+                    if (completedTask == timeoutTask)
+                    {
+                        AppendLog($"UID {uid} 포트 {port}: 10초 내에 소켓 연결 실패 (타임아웃)");
+                        continue;
+                    }
+
+                    sock = connectTask.Result;
+
+                    if (sock == null)
+                    {
+                        AppendLog($"UID {uid} 포트 {port}: 소켓 초기화 실패");
+                        continue;
+                    }
+
+                    var response = await Task.Run(() => SendControlMessage(sock, uid, command, value));
+
+                    string responseStr = JsonConvert.SerializeObject(response, Formatting.Indented);
+
+                    string status = response.ContainsKey("status") ? response["status"]?.ToString() : null;
+                    string type = response.ContainsKey("type") ? response["type"]?.ToString() : null;
+
+                    if (status == "success" || type == "cli")
+                    {
+                        AppendLog($"UID {uid} 포트 {port}에 명령 전송 성공");
+                        AppendLog($"서버 응답: {responseStr}");
+                    }
+                    else
+                    {
+                        AppendLog($"UID {uid} 포트 {port}에 명령 전송 실패: {responseStr}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AppendLog($"UID {uid} 포트 {port} 처리 중 예외 발생: {ex.Message}");
+                }
+                finally
+                {
+                    if (sock != null && sock.Connected)
+                    {
+                        try
+                        {
+                            sock.Shutdown(SocketShutdown.Both);
+                            sock.Close();
+                        }
+                        catch { }
+                    }
+                }
+            }
+        }
+
+
 
         // 소켓 초기화 함수.
         private Socket InitSocket(string server_ip, int server_port)
@@ -371,13 +493,16 @@ namespace radar_settinf_tool_project
                     return result;
                 }
 
+                // 5초 수신 타임아웃 설정
+                clientSocket.ReceiveTimeout = 5000; // 5000ms = 5초
+
                 // Control 메시지 생성
                 var message = new Dictionary<string, string>
                 {
                     { "type", "control" },
-                    { "uid", uid }, // uid_textbox.text
-                    { "command", command }, // command_textbox.text
-                    { "value", value } // value_textbox.text
+                    { "uid", uid },
+                    { "command", command },
+                    { "value", value }
                 };
 
                 // JSON 직렬화 후 전송
@@ -385,14 +510,24 @@ namespace radar_settinf_tool_project
                 byte[] dataToSend = Encoding.UTF8.GetBytes(jsonMessage);
                 clientSocket.Send(dataToSend);
 
-                // 응답 수신
+                // 응답 수신 (최대 5초 대기)
                 byte[] buffer = new byte[8192];
                 int received = clientSocket.Receive(buffer);
                 string responseJson = Encoding.UTF8.GetString(buffer, 0, received);
 
                 // 응답 JSON 파싱
                 var responseDict = JsonConvert.DeserializeObject<Dictionary<string, object>>(responseJson);
+                if (command == "save")
+                {
+                    Console.WriteLine("save 명령어 입력");
+                }
                 return responseDict;
+            }
+            catch (SocketException ex) when (ex.SocketErrorCode == SocketError.TimedOut)
+            {
+                result["status"] = "error";
+                result["error"] = "Receive timeout (no response from server).";
+                return result;
             }
             catch (Exception ex)
             {
@@ -402,6 +537,50 @@ namespace radar_settinf_tool_project
             }
         }
 
+        // 개별 세팅으로 서버에 데이터 보내는 함수
+        private async Task SendDataToServver()
+        { 
+            try
+            {
+                Socket sock = InitSocket(InputServerIp.Text, int.Parse(InputServerPort.Text));
+                if (sock == null) return;
+
+                // 타임아웃 설정 (3초)
+                sock.ReceiveTimeout = 3000;
+
+                // 비동기 처리
+                var responseDict = await Task.Run(() =>
+                    SendControlMessage(sock,
+                        uidBox.Text.Replace(" ", ""),
+                        commandBox.Text.Replace(" ", ""),
+                        valueBox.Text.Replace(" ", ""))
+                );
+
+                string status = responseDict.ContainsKey("status") ? responseDict["status"]?.ToString() : null;
+                string type = responseDict.ContainsKey("type") ? responseDict["type"]?.ToString() : null;
+            /*
+                if (status == "success" || type == "cli")
+                {
+                    MessageBox.Show("Command sent successfully!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                else
+                {
+                    MessageBox.Show("Failed to send command.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            */
+                string responseStr = JsonConvert.SerializeObject(responseDict, Formatting.Indented);
+                AppendLog($"서버 응답: {responseStr}");
+            }
+            catch (SocketException ex) when (ex.SocketErrorCode == SocketError.TimedOut)
+            {
+                AppendLog("응답 시간 초과 (서버가 재시작 중일 수 있음).");
+                MessageBox.Show("서버 응답이 없습니다. 서버가 재시작 중일 수 있습니다.", "Timeout", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Error: " + ex.Message, "Exception", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
 
         //------------- ↓↓ 이벤트 함수----------------
 
@@ -420,13 +599,23 @@ namespace radar_settinf_tool_project
                 }
 
                 AppendLog(isIntegration ? "통합 세팅 모드로 전환됨" : "개별 세팅 모드로 전환됨");
+
                 if (isIntegration)
                 {
-                    LoadUidJson(); // json 파일에서 값 읽어오기
+                    LoadUidJson(); // 통합 모드일 때 JSON 불러오기
                 }
 
+                // InitServerControls() 안에 있는 컨트롤들 표시/숨기기
+                if (InputServerIp != null) InputServerIp.Visible = !isIntegration;
+                if (InputServerPort != null) InputServerPort.Visible = !isIntegration;
+                if (ConnentServerBtn != null) ConnentServerBtn.Visible = !isIntegration;
+                if (checked_label != null) checked_label.Visible = !isIntegration;
+                if (server_Ip_Label != null) server_Ip_Label.Visible = !isIntegration;
+                if (server_Port_Label != null) server_Port_Label.Visible = !isIntegration;
             }
         }
+
+
 
         // 소켓 연결 이벤트 함수
         private void ConnectSocketEvent(object sender, EventArgs e)
@@ -463,46 +652,38 @@ namespace radar_settinf_tool_project
         // 레이더에 세팅 값 보내는 이벤트
         private async void SendDataToRaderEvent(object sender, EventArgs e)
         {
-            try
+            if (individual_btn.Checked)// 개별 세팅 버튼 선택 되었을 때
             {
-                Socket sock = InitSocket(InputServerIp.Text, int.Parse(InputServerPort.Text));
-                if (sock == null) return;
-
-                // 타임아웃 설정 (3초)
-                sock.ReceiveTimeout = 3000;
-
-                // 비동기 처리
-                var responseDict = await Task.Run(() =>
-                    SendControlMessage(sock,
-                        uidBox.Text.Replace(" ", ""),
-                        commandBox.Text.Replace(" ", ""),
-                        valueBox.Text.Replace(" ", ""))
-                );
-
-                string status = responseDict.ContainsKey("status") ? responseDict["status"]?.ToString() : null;
-                string type = responseDict.ContainsKey("type") ? responseDict["type"]?.ToString() : null;
-
-                if (status == "success" || type == "cli")
+                string uid = uidBox.Text;
+                string command = commandBox.Text;
+                if (string.IsNullOrWhiteSpace(uid) || string.IsNullOrWhiteSpace(command))
                 {
-                    MessageBox.Show("Command sent successfully!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    AppendLog("[Error] uid 와 command 명령어는 필수 입력 조건입니다.");
                 }
                 else
-                {
-                    MessageBox.Show("Failed to send command.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                { 
+                    await SendDataToServver();
                 }
-
-                string responseStr = JsonConvert.SerializeObject(responseDict, Formatting.Indented);
-                AppendLog($"서버 응답: {responseStr}");
+                
             }
-            catch (SocketException ex) when (ex.SocketErrorCode == SocketError.TimedOut)
+            else if (intergration_btn.Checked) // 통합세팅 버튼 선택 되었을 때
             {
-                AppendLog("응답 시간 초과 (서버가 재시작 중일 수 있음).");
-                MessageBox.Show("서버 응답이 없습니다. 서버가 재시작 중일 수 있습니다.", "Timeout", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                string command2 = commandBox.Text;
+                if (string.IsNullOrWhiteSpace(command2))
+                {
+                    AppendLog("[Error] command 명령어는 필수 입력 조건입니다.");
+                }
+                else
+                { 
+                    // 서버로 데이터 보내기
+                    string serverIp = InputServerIp.Text;
+                    string command = commandBox.Text;
+                    string value = valueBox.Text;
+                    await SendAllUidCommandsAsync(serverIp, command, value);
+                }
+                
             }
-            catch (Exception ex)
-            {
-                MessageBox.Show("Error: " + ex.Message, "Exception", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
+            
         }
 
     }
