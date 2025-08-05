@@ -15,18 +15,21 @@ dotnet run
 ## 빌드 방법
 
 bash
-dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true
+dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true /p:EnableCompressionInSingleFile=true /p:DebugType=None /p:DebugSymbols=false
+
 
 
 - 실행 파일 경로:  
   bin\Release\net9.0-windows\win-x64\publish\radar_settinf_tool_project.exe
    
 ---
+```
+빌드 후 배포 폴더 구성은 다음과 같습니
 main Folder/
 ├── radar_settinf_tool_project.exe
 └── json/
     └── yn_UidList_2.json
-
+```
 
 ## 🛠️ 사용 방법
 
