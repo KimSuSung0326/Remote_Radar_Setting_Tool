@@ -30,7 +30,7 @@ namespace radar_settinf_tool_project
             lblStatus = new Label()
             {
                 Text = "",
-                Left = 110,
+                Left = 90,
                 Top = 140,
                 Width = 250,
                 ForeColor = Color.Green,

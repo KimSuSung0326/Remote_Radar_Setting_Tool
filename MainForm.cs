@@ -8,6 +8,8 @@ using System.Collections.Generic;
 using System.Net.Sockets;
 using System.Net;
 using System.Threading.Tasks;
+using System.Reflection;
+
 
 namespace radar_settinf_tool_project
 {
@@ -31,13 +33,14 @@ namespace radar_settinf_tool_project
         private Label server_Ip_Label;
         private Label server_Port_Label;
 
-       
+        private readonly List<string> CommandList = new List<string> { "sta", "host2bps", "reset", "wsp", "lsp", "save", "uid", "minthr", "maxthr", "floorthr", "mins", "drops", "dropx",
+                                                                    "dropxm", "dropthr", "movt", "meast", "dropt", "alertt", "cleart", "left", "right","bedh", "radarh", "angle", "mods"};  
 
         public MainForm()
         {
             // main form 기본 세팅
-            this.Text = "Main Form";
-            this.Size = new System.Drawing.Size(500, 800);
+            this.Text = "원격 세팅";
+            this.Size = new System.Drawing.Size(900, 800);
             this.StartPosition = FormStartPosition.CenterScreen;
 
             // 함수들
@@ -47,30 +50,21 @@ namespace radar_settinf_tool_project
             ResultPannel(); // log 창
 
             AppendLog("로그인 성공");     // 초록색
-            //AppendLog("연결 실패");       // 빨간색
-            //AppendLog("설정 완료");       // 기본 흰색
+
 
         }
 
         //여기서 부터 라디오 버튼, 서버, 포트 connect 버튼 만들기
         private void InitModeSelection()
         {
-            Label modeLabel = new Label()
+
+            Label setting = new Label()
             {
-                Text = "세팅",
-                Location = new Point(20, 10),
+                Text = "세팅 방법",
+                Location = new Point(22, 15),
                 AutoSize = true,
                 Font = new Font("맑은 고딕", 10, FontStyle.Bold)
             };
-
-            Label modeLabel_2 = new Label()
-            {
-                Text = "세팅 값 확인",
-                Location = new Point(70, 10),
-                AutoSize = true,
-                Font = new Font("맑은 고딕", 10, FontStyle.Bold)
-            };
-
             individual_btn = new RadioButton()
             {
                 Text = "개별 세팅",
@@ -88,8 +82,8 @@ namespace radar_settinf_tool_project
             individual_btn.CheckedChanged += ModeChanged;
             intergration_btn.CheckedChanged += ModeChanged;
 
-            this.Controls.Add(modeLabel);
-            this.Controls.Add(modeLabel_2);
+
+            this.Controls.Add(setting);
             this.Controls.Add(individual_btn);
             this.Controls.Add(intergration_btn);
         }
@@ -270,7 +264,7 @@ namespace radar_settinf_tool_project
 
             // 위치 및 크기 설정
             resultBox.Location = new Point(10, 300);
-            resultBox.Size = new Size(460, 450);
+            resultBox.Size = new Size(870, 450);
 
             // 속성 설정
             resultBox.ReadOnly = true;
@@ -294,7 +288,7 @@ namespace radar_settinf_tool_project
             {
                 color = Color.LimeGreen;
             }
-            else if (message.Contains("실패") || message.Contains("Error"))
+            else if (message.Contains("실패") || message.Contains("Error")) //message.Contains("not")
             {
                 color = Color.Red;
             }
@@ -314,61 +308,64 @@ namespace radar_settinf_tool_project
         {
             try
             {
-                string exePath = AppDomain.CurrentDomain.BaseDirectory;
-                string projectPath = Directory.GetParent(exePath).Parent.Parent.Parent.FullName;
-                string jsonFilePath = Path.Combine(projectPath, "json", "uid_list.json");
-
-                if (!File.Exists(jsonFilePath))
+                using (OpenFileDialog openFileDialog = new OpenFileDialog())
                 {
-                    AppendLog($"UID JSON 파일이 존재하지 않습니다: {jsonFilePath}");
-                    return;
-                }
+                    openFileDialog.InitialDirectory = Path.Combine(AppContext.BaseDirectory, "json");
+                    openFileDialog.Filter = "JSON 파일 (*.json)|*.json";
+                    openFileDialog.Title = "UID JSON 파일 선택";
 
-                string jsonText = File.ReadAllText(jsonFilePath, Encoding.UTF8);
-                var dict = JsonConvert.DeserializeObject<Dictionary<string, Dictionary<string, object>>>(jsonText);
-
-                if (dict == null)
-                {
-                    AppendLog("UID JSON 파싱 실패: 객체가 null입니다.");
-                    return;
-                }
-
-                uidComboBox.Items.Clear();
-                UidStringList.Clear();
-                UidPortTupleList.Clear();
-
-                foreach (var pair in dict)
-                {
-                    var valueDict = pair.Value;
-
-                    if (valueDict.TryGetValue("uid", out object uidObj) && valueDict.TryGetValue("port", out object portObj))
+                    if (openFileDialog.ShowDialog() != DialogResult.OK)
                     {
-                        string uidFull = uidObj.ToString(); // e.g. "21b7/05583E818120D"
-                        int port = Convert.ToInt32(portObj);
+                        AppendLog("파일 선택이 취소되었습니다.");
+                        return;
+                    }
 
-                        uidComboBox.Items.Add($"{pair.Key} : {uidFull}");
+                    string jsonFilePath = openFileDialog.FileName;
 
-                        // uid에서 "21b7/" 제거하고 저장
-                        if (uidFull.StartsWith("21b7/"))
+                    string jsonText = File.ReadAllText(jsonFilePath, Encoding.UTF8);
+                    var dict = JsonConvert.DeserializeObject<Dictionary<string, Dictionary<string, object>>>(jsonText);
+
+                    if (dict == null)
+                    {
+                        AppendLog("UID JSON 파싱 실패: 객체가 null입니다.");
+                        return;
+                    }
+
+                    uidComboBox.Items.Clear();
+                    UidStringList.Clear();
+                    UidPortTupleList.Clear();
+
+                    foreach (var pair in dict)
+                    {
+                        var valueDict = pair.Value;
+
+                        if (valueDict.TryGetValue("uid", out object uidObj) &&
+                            valueDict.TryGetValue("port", out object portObj))
                         {
-                            string uidStripped = uidFull.Substring(5);
-                            UidStringList.Add(uidStripped);
-                            UidPortTupleList.Add((uidStripped, port));
-                        }
-                        else
-                        {
-                            UidStringList.Add(uidFull); // fallback if prefix missing
-                            UidPortTupleList.Add((uidFull, port));
+                            string uidFull = uidObj.ToString();
+                            int port = Convert.ToInt32(portObj);
+
+                            uidComboBox.Items.Add($"{pair.Key} : {uidFull}");
+
+                            if (uidFull.StartsWith("21b7/"))
+                            {
+                                string uidStripped = uidFull.Substring(5);
+                                UidStringList.Add(uidStripped);
+                                UidPortTupleList.Add((uidStripped, port));
+                            }
+                            else
+                            {
+                                UidStringList.Add(uidFull);
+                                UidPortTupleList.Add((uidFull, port));
+                            }
                         }
                     }
-                }
-                // uid, port 값 출력
-                //foreach (var item in UidPortTupleList)
-                //{
-                    //Console.WriteLine($"UID: {item.Uid}, Port: {item.Port}");
-                //}    
 
-                AppendLog($"UID JSON 파일에서 {dict.Count}개의 항목을 불러왔습니다.");
+                    if (uidComboBox.Items.Count > 0)
+                        uidComboBox.SelectedIndex = 0;
+
+                    AppendLog($"선택한 파일에서 {dict.Count}개의 UID 항목을 불러왔습니다.");
+                }
             }
             catch (Exception ex)
             {
@@ -376,10 +373,24 @@ namespace radar_settinf_tool_project
             }
         }
 
+
         // 모든 uid를 세팅 하는 함수
 
         private async Task SendAllUidCommandsAsync(string serverIp, string command, string value)
         {
+            List<string> resultLines = new List<string>(); // 결과 저장용 리스트
+            int success_count = 0, fail_count = 0;
+
+            string exePath = AppDomain.CurrentDomain.BaseDirectory;
+            string projectPath = Directory.GetParent(exePath).Parent.Parent.Parent.FullName;
+            string logFileName = $"{DateTime.Now:yyyy_MM_dd}_fail_setting.log";
+            string logFilePath = Path.Combine(projectPath, "log", logFileName);
+            string logDirPath = Path.Combine(projectPath, "log");
+
+            List<(string serverip, string uid, int port, string command, string value)> failSendList = new List<(string, string, int, string, string)>();// 전송 실패한 정보 리스트
+
+
+
             foreach (var (uid, port) in UidPortTupleList)
             {
                 Socket sock = null;
@@ -410,6 +421,8 @@ namespace radar_settinf_tool_project
 
                     var completedTask = await Task.WhenAny(connectTask, timeoutTask);
 
+
+
                     if (completedTask == timeoutTask)
                     {
                         AppendLog($"UID {uid} 포트 {port}: 10초 내에 소켓 연결 실패 (타임아웃)");
@@ -420,25 +433,42 @@ namespace radar_settinf_tool_project
 
                     if (sock == null)
                     {
-                        AppendLog($"UID {uid} 포트 {port}: 소켓 초기화 실패");
+                        AppendLog($"UID {uid} 포트 {port}: 소켓 연결 실패");
                         continue;
                     }
 
                     var response = await Task.Run(() => SendControlMessage(sock, uid, command, value));
 
-                    string responseStr = JsonConvert.SerializeObject(response, Formatting.Indented);
+                    string responseStr = JsonConvert.SerializeObject(response, Formatting.None);// Formatting.Indented
+                    string responseStrCompact = JsonConvert.SerializeObject(response, Formatting.None);
+
 
                     string status = response.ContainsKey("status") ? response["status"]?.ToString() : null;
                     string type = response.ContainsKey("type") ? response["type"]?.ToString() : null;
 
-                    if (status == "success" || type == "cli")
+                    if (status == "success" || type == "cli" ) 
                     {
+                        
                         AppendLog($"UID {uid} 포트 {port}에 명령 전송 성공");
                         AppendLog($"서버 응답: {responseStr}");
+                        resultLines.Add(responseStrCompact);
+                        success_count++;
                     }
                     else
                     {
                         AppendLog($"UID {uid} 포트 {port}에 명령 전송 실패: {responseStr}");
+                        fail_count++;
+                        string logLine = $" [{DateTime.Now:HH:mm:ss}] [Fail Setting] UID: {uid}, Port: {port}, Command: {command}, Value: {value}";
+                        if (!Directory.Exists(logDirPath))
+                        {
+                            Directory.CreateDirectory(logDirPath);
+                        }
+
+                        File.AppendAllText(logFilePath, logLine + Environment.NewLine);
+                        string serverip = InputServerIp.Text;
+                        failSendList.Add((serverip, uid, port, command, value)); // 리스트에 실패한 데이터 저장.
+
+
                     }
                 }
                 catch (Exception ex)
@@ -457,6 +487,12 @@ namespace radar_settinf_tool_project
                         catch { }
                     }
                 }
+            }
+            // 세팅 값 로그 창에 출력
+            if (fail_count > 0)
+            {
+                SettingResultForm resultForm = new SettingResultForm(success_count, fail_count,failSendList);
+                resultForm.ShowDialog(); // 모달 방식으로 띄우기
             }
         }
 
@@ -494,7 +530,7 @@ namespace radar_settinf_tool_project
                 }
 
                 // 5초 수신 타임아웃 설정
-                clientSocket.ReceiveTimeout = 5000; // 5000ms = 5초
+                clientSocket.ReceiveTimeout = 5000;
 
                 // Control 메시지 생성
                 var message = new Dictionary<string, string>
@@ -510,6 +546,15 @@ namespace radar_settinf_tool_project
                 byte[] dataToSend = Encoding.UTF8.GetBytes(jsonMessage);
                 clientSocket.Send(dataToSend);
 
+                // save 명령은 서버 재시작으로 응답이 없으므로 성공으로 간주
+                if (command == "save")
+                {
+                    Console.WriteLine("save 명령어 입력 - 응답 없이 성공 처리");
+                    result["status"] = "success";
+                    result["note"] = "Response skipped due to 'save' command.";
+                    return result;
+                }
+
                 // 응답 수신 (최대 5초 대기)
                 byte[] buffer = new byte[8192];
                 int received = clientSocket.Receive(buffer);
@@ -517,10 +562,6 @@ namespace radar_settinf_tool_project
 
                 // 응답 JSON 파싱
                 var responseDict = JsonConvert.DeserializeObject<Dictionary<string, object>>(responseJson);
-                if (command == "save")
-                {
-                    Console.WriteLine("save 명령어 입력");
-                }
                 return responseDict;
             }
             catch (SocketException ex) when (ex.SocketErrorCode == SocketError.TimedOut)
@@ -536,6 +577,7 @@ namespace radar_settinf_tool_project
                 return result;
             }
         }
+
 
         // 개별 세팅으로 서버에 데이터 보내는 함수
         private async Task SendDataToServver()
@@ -615,6 +657,11 @@ namespace radar_settinf_tool_project
             }
         }
 
+        // 통합 세팅 후 세팅 값 확인 이벤트
+        private void CheckSettingValue(object sender, EventArgs e)
+        {
+
+        }
 
 
         // 소켓 연결 이벤트 함수
@@ -655,26 +702,34 @@ namespace radar_settinf_tool_project
             if (individual_btn.Checked)// 개별 세팅 버튼 선택 되었을 때
             {
                 string uid = uidBox.Text;
-                string command = commandBox.Text;
+                string command = commandBox.Text.Trim().ToLower();
                 if (string.IsNullOrWhiteSpace(uid) || string.IsNullOrWhiteSpace(command))
                 {
                     AppendLog("[Error] uid 와 command 명령어는 필수 입력 조건입니다.");
                 }
+                else if (!CommandList.Contains(command))
+                {
+                    AppendLog($"[Error] '{command}' 는 지원하지 않는 명령어입니다.");
+                }
                 else
-                { 
+                {
                     await SendDataToServver();
                 }
                 
             }
             else if (intergration_btn.Checked) // 통합세팅 버튼 선택 되었을 때
             {
-                string command2 = commandBox.Text;
+                string command2 = commandBox.Text.Trim().ToLower();
                 if (string.IsNullOrWhiteSpace(command2))
                 {
                     AppendLog("[Error] command 명령어는 필수 입력 조건입니다.");
                 }
+                else if (!CommandList.Contains(command2))
+                {
+                    AppendLog($"[Error] '{command2}' 는 지원하지 않는 명령어입니다.");
+                }
                 else
-                { 
+                {
                     // 서버로 데이터 보내기
                     string serverIp = InputServerIp.Text;
                     string command = commandBox.Text;

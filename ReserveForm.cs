@@ -103,7 +103,7 @@ namespace radar_settinf_tool_project
             {
                 Minimum = 0,
                 Maximum = 59,
-                Value = 0,
+                Value = DateTime.Now.Minute,
                 Location = new Point(450, 205),
                 Width = 60,
                 Font = new Font("맑은 고딕", 10)
@@ -237,6 +237,104 @@ namespace radar_settinf_tool_project
                 {
                     this.Invoke((MethodInvoker)(() =>
                     {
+                        displayBox.AppendText($"\n[예약 실행 결과 - {DateTime.Now:HH:mm}]\n");
+                        displayBox.AppendText(summary);
+                        displayBox.ScrollToCaret();
+                    }));
+                }
+                catch (ObjectDisposedException)
+                {
+                    // 이미 폼이 닫혔다면 무시
+                }
+            }
+
+            // 결과는 항상 MessageBox로 보여주기 (안정적)
+            //ShowResultMessageBox(summary);
+        }
+
+        private async Task SendSaveToUid()
+        {
+            StringBuilder resultSummary = new StringBuilder(); // 결과 저장용
+
+            foreach (var item in failSendList)
+            {
+                Socket sock = null;
+
+                try
+                {
+                    var connectTask = Task.Run(() => InitSocket(item.serverip, item.port));
+                    var timeoutTask = Task.Delay(TimeSpan.FromSeconds(10));
+                    var completedTask = await Task.WhenAny(connectTask, timeoutTask);
+
+                    if (completedTask == timeoutTask)
+                    {
+                        string msg = $"UID {item.uid} 포트 {item.port}: 연결 타임아웃 (10초)";
+                        Console.WriteLine(msg);
+                        resultSummary.AppendLine(msg);
+                        continue;
+                    }
+
+                    sock = connectTask.Result;
+
+                    if (sock == null)
+                    {
+                        string msg = $"UID {item.uid} 포트 {item.port}: 소켓 연결 실패";
+                        Console.WriteLine(msg);
+                        resultSummary.AppendLine(msg);
+                        continue;
+                    }
+
+                    string command = "save";
+                    string value = "";
+
+                    var response = await Task.Run(() => SendControlMessage(sock, item.uid, command, value));
+                    string status = response.ContainsKey("status") ? response["status"]?.ToString() : null;
+                    string type = response.ContainsKey("type") ? response["type"]?.ToString() : null;
+
+                    if (status == "success" || type == "cli")
+                    {
+                        string msg = $"UID {item.uid} 포트 {item.port} command:{item.command} value:{item.value} - 명령 전송 성공";
+                        Console.WriteLine(msg);
+                        resultSummary.AppendLine(msg);
+                    }
+                    else
+                    {
+                        
+                        string msg = $"UID {item.uid} 포트 {item.port} command:{item.command} value:{item.value} - 명령 전송 실패";
+                        Console.WriteLine(msg);
+                        resultSummary.AppendLine(msg);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    string msg = $"UID {item.uid} 포트 {item.port} 예외 발생: {ex.Message}";
+                    Console.WriteLine(msg);
+                    resultSummary.AppendLine(msg);
+                }
+                finally
+                {
+                    if (sock != null && sock.Connected)
+                    {
+                        try
+                        {
+                            sock.Shutdown(SocketShutdown.Both);
+                            sock.Close();
+                        }
+                        catch { }
+                    }
+                }
+            }
+            
+
+            string summary = resultSummary.ToString();
+
+            // UI 요소 접근 전 체크
+            if (this.IsHandleCreated && !this.IsDisposed)
+            {
+                try
+                {
+                    this.Invoke((MethodInvoker)(() =>
+                    {
                         displayBox.AppendText($"\n[예약 실행 결과 - {DateTime.Now:HH:mm:ss}]\n");
                         displayBox.AppendText(summary);
                         displayBox.ScrollToCaret();
@@ -251,6 +349,7 @@ namespace radar_settinf_tool_project
             // 결과는 항상 MessageBox로 보여주기 (안정적)
             ShowResultMessageBox(summary);
         }
+
 
         private void ShowResultMessageBox(string result)
         {
@@ -273,7 +372,7 @@ namespace radar_settinf_tool_project
                 }
 
                 // 5초 수신 타임아웃 설정
-                clientSocket.ReceiveTimeout = 5000; // 5000ms = 5초
+                clientSocket.ReceiveTimeout = 5000;
 
                 // Control 메시지 생성
                 var message = new Dictionary<string, string>
@@ -289,6 +388,15 @@ namespace radar_settinf_tool_project
                 byte[] dataToSend = Encoding.UTF8.GetBytes(jsonMessage);
                 clientSocket.Send(dataToSend);
 
+                // save 명령은 서버 재시작으로 응답이 없으므로 성공으로 간주
+                if (command == "save")
+                {
+                    Console.WriteLine("save 명령어 입력 - 응답 없이 성공 처리");
+                    result["status"] = "success";
+                    result["note"] = "Response skipped due to 'save' command.";
+                    return result;
+                }
+
                 // 응답 수신 (최대 5초 대기)
                 byte[] buffer = new byte[8192];
                 int received = clientSocket.Receive(buffer);
@@ -296,10 +404,6 @@ namespace radar_settinf_tool_project
 
                 // 응답 JSON 파싱
                 var responseDict = JsonConvert.DeserializeObject<Dictionary<string, object>>(responseJson);
-                if (command == "save")
-                {
-                    Console.WriteLine("save 명령어 입력");
-                }
                 return responseDict;
             }
             catch (SocketException ex) when (ex.SocketErrorCode == SocketError.TimedOut)
@@ -315,6 +419,8 @@ namespace radar_settinf_tool_project
                 return result;
             }
         }
+
+
 
 
         /*
@@ -380,6 +486,7 @@ namespace radar_settinf_tool_project
 
                 // 세팅 함수
                 await SendAllFallDataAsync();
+                await SendSaveToUid();
                 
             }
         }
