@@ -13,7 +13,7 @@ using System.Reflection;
 
 namespace radar_settinf_tool_project
 {
-    // main 문 
+    // main 문
     public class MainForm : Form
     {
         private RadioButton intergration_btn;
@@ -34,7 +34,7 @@ namespace radar_settinf_tool_project
         private Label server_Port_Label;
 
         private readonly List<string> CommandList = new List<string> { "sta", "host2bps", "reset", "wsp", "lsp", "save", "uid", "minthr", "maxthr", "floorthr", "mins", "drops", "dropx",
-                                                                    "dropxm", "dropthr", "movt", "meast", "dropt", "alertt", "cleart", "left", "right","bedh", "radarh", "angle", "mods"};  
+                                                                    "dropxm", "dropthr", "movt", "meast", "dropt", "alertt", "cleart", "left", "right","bedh", "radarh", "angle", "mods"};
 
         public MainForm()
         {
@@ -382,10 +382,9 @@ namespace radar_settinf_tool_project
             int success_count = 0, fail_count = 0;
 
             string exePath = AppDomain.CurrentDomain.BaseDirectory;
-            string projectPath = Directory.GetParent(exePath).Parent.Parent.Parent.FullName;
             string logFileName = $"{DateTime.Now:yyyy_MM_dd}_fail_setting.log";
-            string logFilePath = Path.Combine(projectPath, "log", logFileName);
-            string logDirPath = Path.Combine(projectPath, "log");
+            string logFilePath = Path.Combine(exePath, "log", logFileName);
+            string logDirPath = Path.Combine(exePath, "log");
 
             List<(string serverip, string uid, int port, string command, string value)> failSendList = new List<(string, string, int, string, string)>();// 전송 실패한 정보 리스트
 
@@ -446,9 +445,9 @@ namespace radar_settinf_tool_project
                     string status = response.ContainsKey("status") ? response["status"]?.ToString() : null;
                     string type = response.ContainsKey("type") ? response["type"]?.ToString() : null;
 
-                    if (status == "success" || type == "cli" ) 
+                    if (status == "success" || type == "cli" )
                     {
-                        
+
                         AppendLog($"UID {uid} 포트 {port}에 명령 전송 성공");
                         AppendLog($"서버 응답: {responseStr}");
                         resultLines.Add(responseStrCompact);
@@ -581,7 +580,11 @@ namespace radar_settinf_tool_project
 
         // 개별 세팅으로 서버에 데이터 보내는 함수
         private async Task SendDataToServver()
-        { 
+        {
+            string exePath = AppDomain.CurrentDomain.BaseDirectory;
+            string logFileName = $"{DateTime.Now:yyyy_MM_dd}_fail_setting.log";
+            string logFilePath = Path.Combine(exePath, "log", logFileName);
+            string logDirPath = Path.Combine(exePath, "log");
             try
             {
                 Socket sock = InitSocket(InputServerIp.Text, int.Parse(InputServerPort.Text));
@@ -600,18 +603,31 @@ namespace radar_settinf_tool_project
 
                 string status = responseDict.ContainsKey("status") ? responseDict["status"]?.ToString() : null;
                 string type = responseDict.ContainsKey("type") ? responseDict["type"]?.ToString() : null;
-            /*
+
+                string responseStr = JsonConvert.SerializeObject(responseDict, Formatting.None);
+
+
                 if (status == "success" || type == "cli")
                 {
-                    MessageBox.Show("Command sent successfully!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    AppendLog($"UID {uidBox.Text} 포트 {InputServerPort.Text}에 명령 전송 성공");
+                    AppendLog($"서버 응답: {responseStr}");
                 }
                 else
                 {
-                    MessageBox.Show("Failed to send command.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    AppendLog($"UID {uidBox.Text} 포트 {InputServerPort.Text}에 명령 전송 실패");
+                    AppendLog($"서버 응답: {responseStr}");
+
+
+                    string logLine = $" [{DateTime.Now:HH:mm:ss}] [Fail Setting] UID: {uidBox.Text}, Port: {InputServerPort.Text}, Command: {commandBox.Text}, Value: {valueBox.Text}";
+                    if (!Directory.Exists(logDirPath))
+                    {
+                        Directory.CreateDirectory(logDirPath);
+                    }
+
+                    File.AppendAllText(logFilePath, logLine + Environment.NewLine);
                 }
-            */
-                string responseStr = JsonConvert.SerializeObject(responseDict, Formatting.Indented);
-                AppendLog($"서버 응답: {responseStr}");
+
+
             }
             catch (SocketException ex) when (ex.SocketErrorCode == SocketError.TimedOut)
             {
@@ -715,7 +731,7 @@ namespace radar_settinf_tool_project
                 {
                     await SendDataToServver();
                 }
-                
+
             }
             else if (intergration_btn.Checked) // 통합세팅 버튼 선택 되었을 때
             {
@@ -736,9 +752,9 @@ namespace radar_settinf_tool_project
                     string value = valueBox.Text;
                     await SendAllUidCommandsAsync(serverIp, command, value);
                 }
-                
+
             }
-            
+
         }
 
     }

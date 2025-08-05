@@ -226,7 +226,7 @@ namespace radar_settinf_tool_project
                     }
                 }
             }
-            
+
 
             string summary = resultSummary.ToString();
 
@@ -299,7 +299,7 @@ namespace radar_settinf_tool_project
                     }
                     else
                     {
-                        
+
                         string msg = $"UID {item.uid} 포트 {item.port} command:{item.command} value:{item.value} - 명령 전송 실패";
                         Console.WriteLine(msg);
                         resultSummary.AppendLine(msg);
@@ -324,7 +324,7 @@ namespace radar_settinf_tool_project
                     }
                 }
             }
-            
+
 
             string summary = resultSummary.ToString();
 
@@ -346,7 +346,7 @@ namespace radar_settinf_tool_project
                 }
             }
 
-            // 결과는 항상 MessageBox로 보여주기 (안정적)
+            // 결과는 항상 MessageBox로 보여주기
             ShowResultMessageBox(summary);
         }
 
@@ -448,7 +448,7 @@ namespace radar_settinf_tool_project
             resultBox.ScrollToCaret(); // 자동 스크롤
         }
         */
-        // 여기서부터 이벤트 핸들러 
+        // 여기서부터 이벤트 핸들러
         private void ConfirmButton_Click(object sender, EventArgs e)
         {
             DateTime date = datePicker.Value.Date;
@@ -465,7 +465,7 @@ namespace radar_settinf_tool_project
             }
 
             MessageBox.Show($"예약시간 \"{selectedTime:yyyy-MM-dd HH:mm}\"로 설정되었습니다.\n예약 시간이 되면 메시지가 출력됩니다.", "예약 완료", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            
+
 
             // 타이머 시작
             checkTimer.Start();
@@ -487,7 +487,7 @@ namespace radar_settinf_tool_project
                 // 세팅 함수
                 await SendAllFallDataAsync();
                 await SendSaveToUid();
-                
+
             }
         }
     }
